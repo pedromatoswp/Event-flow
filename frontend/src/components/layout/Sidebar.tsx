@@ -20,13 +20,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 
 const navigation = [
-  { name: 'Home', href: '/', icon: Home },
-  { name: 'Events', href: '/events', icon: Calendar },
+  { name: 'Início', href: '/', icon: Home },
+  { name: 'Eventos', href: '/events', icon: Calendar },
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, protected: true },
-  { name: 'My Tickets', href: '/tickets', icon: Ticket, protected: true },
-  { name: 'Favorites', href: '/favorites', icon: Heart, protected: true },
-  { name: 'Profile', href: '/profile', icon: User, protected: true },
-  { name: 'Admin', href: '/admin', icon: Shield, protected: true, admin: true },
+  { name: 'Meus ingressos', href: '/tickets', icon: Ticket, protected: true },
+  { name: 'Favoritos', href: '/favorites', icon: Heart, protected: true },
+  { name: 'Perfil', href: '/profile', icon: User, protected: true },
+  { name: 'Criar evento', href: '/admin/events', icon: Calendar, protected: true, admin: true },
+  { name: 'Painel admin', href: '/admin', icon: Shield, protected: true, admin: true },
 ];
 
 export function Sidebar() {

@@ -36,11 +36,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (credentials: LoginCredentials) => {
     try {
-      const response: AuthResponse = await authApi.login(credentials);
-      setUser(response.user);
+      const response = await authApi.login(credentials);
+      const user = {
+        ...response.user,
+        id: String(response.user.id),
+      };
+      setUser(user);
       setToken(response.token);
       localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
+      localStorage.setItem('user', JSON.stringify(user));
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -49,11 +53,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (credentials: RegisterCredentials) => {
     try {
-      const response: AuthResponse = await authApi.register(credentials);
-      setUser(response.user);
+      const response = await authApi.register(credentials);
+      const user = {
+        ...response.user,
+        id: String(response.user.id),
+      };
+      setUser(user);
       setToken(response.token);
       localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
+      localStorage.setItem('user', JSON.stringify(user));
     } catch (error) {
       console.error('Register error:', error);
       throw error;

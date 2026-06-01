@@ -105,7 +105,7 @@ export default function FavoritesPage() {
                 <Card className="overflow-hidden hover:shadow-lg transition-shadow">
                   <div className="relative h-48">
                     <img
-                      src={event.imageUrl || '/placeholder-event.jpg'}
+                      src={event.imageUrl || '/placeholder-event.svg'}
                       alt={event.title}
                       className="w-full h-full object-cover"
                     />

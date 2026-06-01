@@ -28,3 +28,9 @@ export function paginate(page: number, limit: number): { offset: number; limit: 
   const safeLimit = Math.min(100, Math.max(1, limit))
   return { offset: (safePage - 1) * safeLimit, limit: safeLimit }
 }
+
+/** mysql2 prepared statements reject LIMIT/OFFSET placeholders on some servers */
+export function sqlLimitOffset(page: number, limit: number): string {
+  const { offset, limit: safeLimit } = paginate(page, limit)
+  return `LIMIT ${safeLimit} OFFSET ${offset}`
+}

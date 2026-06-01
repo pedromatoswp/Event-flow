@@ -7,8 +7,11 @@ USE `event-flow`;
 
 -- =========================
 -- Sample users (clients + administrator)
--- Password hashes generated with bcrypt for:
---   client123 / admin123 / client456 / client789
+-- Password hashes (bcrypt, cost 10):
+--   client1@eventflow.local  -> client123
+--   client2@eventflow.local  -> client456
+--   client3@eventflow.local  -> client789
+--   admin@eventflow.local    -> admin123
 -- =========================
 
 INSERT INTO `users` (
@@ -23,10 +26,10 @@ INSERT INTO `users` (
   `updated_at`
 )
 VALUES
-  (1, 'client1@eventflow.local', '$2b$10$lmAdrjLL5pqv8dFVCXYTUO7Uy1Gu/vzfVYr9k2wWhtvsC6KOQdklG', 'Ana Silva', '11999990001', 1, TRUE, NOW(), NOW()),
-  (2, 'client2@eventflow.local', '$2b$10$D2J2XYvspPB9gzjEcFOwIemaVKnf9sloGkslTsgcVy8OdByiAV0zi', 'Bruno Santos', '11999990002', 1, TRUE, NOW(), NOW()),
-  (3, 'client3@eventflow.local', '$2b$10$vbyW2k9V7GD7Pm02CpgpSuzHia9Ykof/mok5A4B/pHgHHP9kYbkle', 'Carla Oliveira', '11999990003', 1, TRUE, NOW(), NOW()),
-  (4, 'admin@eventflow.local',    '$2b$10$aBJPHgWpuHmtf4/VMtAZ0eEKFOwFg4G8ZkBP/NnVemW.2vCnuJ3XW', 'Admin EventFlow', '11999990004', 2, TRUE, NOW(), NOW());
+  (1, 'client1@eventflow.local', '$2b$10$xKyTxQ6rKPntBJZI8w9bsehJERfqChv6sT6AAwB00kIq.zn1JtkUi', 'Ana Silva', '11999990001', 1, TRUE, NOW(), NOW()),
+  (2, 'client2@eventflow.local', '$2b$10$DeoCulmkDm6vibfC4pUYj.A.S.N0u17i9dWeAnVUVjqsKfERjps1y', 'Bruno Santos', '11999990002', 1, TRUE, NOW(), NOW()),
+  (3, 'client3@eventflow.local', '$2b$10$Jkadl8J8QUAAaMWfLS5LiO0.beZZNX.j.pYNXnN5RPydSDSLVC8kW', 'Carla Oliveira', '11999990003', 1, TRUE, NOW(), NOW()),
+  (4, 'admin@eventflow.local',    '$2b$10$2i8IEYK8Q/wuYWxfD79jt.8bBa5wwFTbAqHVCiTwRjDDoG4s00s4.', 'Admin EventFlow', '11999990004', 2, TRUE, NOW(), NOW());
 
 -- =========================
 -- Administrators (one-to-one with users.id)

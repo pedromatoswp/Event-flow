@@ -8,17 +8,33 @@ import type { AuthRequest } from '../types/index'
 
 interface UserRow extends RowDataPacket {
   id: number
-  name: string
+  full_name: string
   email: string
   password_hash: string
-  role: 'user' | 'admin'
+  role_id: number
+  is_active: boolean
   created_at: Date
+}
+
+function roleFromId(roleId: number): 'user' | 'admin' {
+  return roleId === 2 ? 'admin' : 'user'
+}
+
+function publicUser(user: { id: number; full_name: string; email: string; role_id: number; created_at?: Date }) {
+  return {
+    id: user.id,
+    name: user.full_name,
+    email: user.email,
+    role: roleFromId(user.role_id),
+    createdAt: user.created_at?.toISOString?.() ?? new Date().toISOString(),
+  }
 }
 
 export async function register(req: Request, res: Response): Promise<void> {
   const { name, email, password } = req.body as { name: string; email: string; password: string }
+  const normalizedEmail = email.trim().toLowerCase()
 
-  const existing = await queryOne<UserRow>('SELECT id FROM users WHERE email = ?', [email])
+  const existing = await queryOne<UserRow>('SELECT id FROM users WHERE email = ?', [normalizedEmail])
   if (existing) {
     sendBadRequest(res, 'Email already registered')
     return
@@ -28,23 +44,27 @@ export async function register(req: Request, res: Response): Promise<void> {
   const password_hash = await bcrypt.hash(password, rounds)
 
   const [result] = await execute(
-    'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
-    [name, email, password_hash, 'user']
+    `INSERT INTO users (email, password_hash, full_name, role_id, is_active)
+     VALUES (?, ?, ?, 1, TRUE)`,
+    [normalizedEmail, password_hash, name]
   )
 
-  const token = signToken({ id: result.insertId, email, role: 'user' })
-  sendCreated(res, { token, user: { id: result.insertId, name, email, role: 'user' } }, 'Registered successfully')
+  const userId = result.insertId
+  const token = signToken({ id: userId, email: normalizedEmail, role: 'user' })
+  sendCreated(res, { token, user: { id: userId, name, email: normalizedEmail, role: 'user' } }, 'Registered successfully')
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body as { email: string; password: string }
+  const normalizedEmail = email.trim().toLowerCase()
 
   const user = await queryOne<UserRow>(
-    'SELECT id, name, email, password_hash, role FROM users WHERE email = ?',
-    [email]
+    `SELECT id, full_name, email, password_hash, role_id, is_active, created_at
+     FROM users WHERE email = ? LIMIT 1`,
+    [normalizedEmail]
   )
 
-  if (!user) {
+  if (!user || !user.is_active) {
     sendUnauthorized(res, 'Invalid email or password')
     return
   }
@@ -55,23 +75,21 @@ export async function login(req: Request, res: Response): Promise<void> {
     return
   }
 
-  const token = signToken({ id: user.id, email: user.email, role: user.role })
-  sendSuccess(res, {
-    token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
-  }, 'Login successful')
+  const role = roleFromId(user.role_id)
+  const token = signToken({ id: user.id, email: user.email, role })
+  sendSuccess(res, { token, user: publicUser(user) }, 'Login successful')
 }
 
 export async function me(req: AuthRequest, res: Response): Promise<void> {
   const user = await queryOne<UserRow>(
-    'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
+    `SELECT id, full_name, email, role_id, created_at FROM users WHERE id = ?`,
     [req.user!.id]
   )
   if (!user) {
     sendUnauthorized(res, 'User not found')
     return
   }
-  sendSuccess(res, user)
+  sendSuccess(res, publicUser(user))
 }
 
 export async function changePassword(req: AuthRequest, res: Response): Promise<void> {

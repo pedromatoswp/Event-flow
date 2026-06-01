@@ -37,8 +37,41 @@ export default function AdminDashboardPage() {
 
   const loadStats = async () => {
     try {
-      const data = await adminApi.getStats();
-      setStats(data);
+      const data = (await adminApi.getStats()) as {
+        stats?: {
+          users?: number;
+          events?: number;
+          tickets?: number;
+          revenue?: number;
+        };
+        recent?: {
+          events?: { title: string; date?: string }[];
+          users?: { name: string; created_at?: string }[];
+        };
+      };
+
+      const recentEvents = data.recent?.events ?? [];
+      const recentUsers = data.recent?.users ?? [];
+
+      setStats({
+        totalUsers: data.stats?.users ?? 0,
+        totalEvents: data.stats?.events ?? 0,
+        totalTickets: data.stats?.tickets ?? 0,
+        revenue: data.stats?.revenue ?? 0,
+        activeEventsThisMonth: data.stats?.events ?? 0,
+        ticketsSoldThisMonth: data.stats?.tickets ?? 0,
+        newUsersThisMonth: data.stats?.users ?? 0,
+        recentActivity: [
+          ...recentEvents.map((e) => ({
+            action: `Evento: ${e.title}`,
+            timestamp: e.date ?? new Date().toISOString(),
+          })),
+          ...recentUsers.map((u) => ({
+            action: `Novo usuário: ${u.name}`,
+            timestamp: u.created_at ?? new Date().toISOString(),
+          })),
+        ],
+      });
     } catch (err) {
       error('Failed to load admin stats');
     } finally {
@@ -139,9 +172,9 @@ export default function AdminDashboardPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <Link href="/admin/events">
-                  <Button variant="outline" className="w-full justify-start">
+                  <Button className="w-full justify-start">
                     <Calendar className="h-4 w-4 mr-2" />
-                    Manage Events
+                    Criar / gerenciar eventos
                     <ArrowRight className="h-4 w-4 ml-auto" />
                   </Button>
                 </Link>

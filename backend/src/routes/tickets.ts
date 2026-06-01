@@ -1,21 +1,24 @@
 import { Router } from 'express'
 import {
-  getAllTickets, getTicketById, purchaseTicket,
-  cancelTicket, updateTicketStatus
+  getAllTickets,
+  getMyTickets,
+  getTicketById,
+  purchaseTicket,
+  cancelTicket,
+  updateTicketStatus,
 } from '../controllers/ticketsController'
 import { authenticate, requireAdmin } from '../middleware/auth'
-import { validate } from '../middleware/validate'
+import { asyncHandler } from '../utils/async-handler'
 
 const router = Router()
 
-router.get('/', authenticate, requireAdmin, getAllTickets)
-router.post('/', authenticate, validate([
-  { field: 'event_id', required: true, type: 'number' },
-  { field: 'quantity', required: true, type: 'number' },
-]), purchaseTicket)
+router.get('/me', authenticate, asyncHandler(getMyTickets))
+router.get('/admin/all', authenticate, requireAdmin, asyncHandler(getAllTickets))
 
-router.get('/:id', authenticate, getTicketById)
-router.put('/:id/cancel', authenticate, cancelTicket)
-router.put('/:id/status', authenticate, requireAdmin, updateTicketStatus)
+router.post('/purchase', authenticate, asyncHandler(purchaseTicket))
+
+router.get('/:id', authenticate, asyncHandler(getTicketById))
+router.put('/:id/cancel', authenticate, asyncHandler(cancelTicket))
+router.put('/:id/status', authenticate, requireAdmin, asyncHandler(updateTicketStatus))
 
 export default router

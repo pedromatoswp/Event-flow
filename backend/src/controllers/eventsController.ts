@@ -1,123 +1,236 @@
 import type { Request, Response } from 'express'
 import type { RowDataPacket } from 'mysql2'
-import { query, queryOne, execute, paginate } from '../utils/db'
-import { sendSuccess, sendCreated, sendNotFound, sendForbidden } from '../utils/response'
+import { query, queryOne, execute } from '../utils/db'
+import { sendSuccess, sendCreated, sendNotFound, sendForbidden, sendBadRequest } from '../utils/response'
 import type { AuthRequest } from '../types/index'
+import { mapEventForFrontend } from '../mappers/event.mapper'
 
-interface EventRow extends RowDataPacket {
-  id: number
-  title: string
-  description: string
-  date: Date
-  end_date: Date
-  location: string
-  capacity: number
-  price: number
-  status: 'draft' | 'published' | 'cancelled' | 'completed'
-  category_id: number
-  organizer_id: number
-  created_at: Date
+async function getFavoriteEventIds(userId: number): Promise<Set<number>> {
+  const [rows] = await query<RowDataPacket[]>(
+    'SELECT event_id FROM favorites WHERE user_id = ?',
+    [userId]
+  )
+  return new Set(rows.map((r) => Number(r.event_id)))
 }
 
-const EVENT_SELECT = `
-  SELECT e.id, e.title, e.description, e.date, e.end_date, e.location,
-         e.capacity, e.price, e.status, e.created_at,
-         c.name AS category, c.id AS category_id,
-         u.name AS organizer, u.id AS organizer_id,
-         (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status = 'confirmed') AS tickets_sold
+function mapEventsWithFavorites(rows: RowDataPacket[], favoriteIds: Set<number>) {
+  return rows.map((row) =>
+    mapEventForFrontend(row, favoriteIds.has(Number(row.id)))
+  )
+}
+
+const EVENT_BASE = `
+  SELECT
+    e.id, e.title, e.description, e.venue, e.start_datetime, e.end_datetime,
+    e.capacity, e.event_status, e.organizer_admin_user_id, e.created_at,
+    GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR '||') AS categories,
+    (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status IN ('approved', 'pending')) AS tickets_sold
   FROM events e
-  LEFT JOIN categories c ON e.category_id = c.id
-  LEFT JOIN users u ON e.organizer_id = u.id
+  LEFT JOIN event_categories ec ON ec.event_id = e.id
+  LEFT JOIN categories c ON c.id = ec.category_id
 `
 
-export async function getAllEvents(req: Request, res: Response): Promise<void> {
-  const page = Number(req.query['page'] ?? 1)
-  const limit = Number(req.query['limit'] ?? 20)
-  const { offset } = paginate(page, limit)
+export async function getAllEvents(req: AuthRequest, res: Response): Promise<void> {
   const { category, status, search } = req.query as Record<string, string | undefined>
-
-  let sql = EVENT_SELECT + ' WHERE 1=1'
+  let sql = `${EVENT_BASE} WHERE 1=1`
   const params: unknown[] = []
 
-  if (category) { sql += ' AND c.id = ?'; params.push(category) }
-  if (status) { sql += ' AND e.status = ?'; params.push(status) }
-  if (search) { sql += ' AND (e.title LIKE ? OR e.description LIKE ?)'; params.push(`%${search}%`, `%${search}%`) }
+  if (category) {
+    sql += ' AND ec.category_id = ?'
+    params.push(category)
+  }
+  if (status === 'all' && req.user?.role === 'admin') {
+    // Admin list: show all statuses
+  } else if (status) {
+    sql += ' AND e.event_status = ?'
+    params.push(status === 'published' ? 'active' : status)
+  } else {
+    sql += " AND e.event_status = 'active'"
+  }
+  if (search) {
+    sql += ' AND (e.title LIKE ? OR e.description LIKE ?)'
+    params.push(`%${search}%`, `%${search}%`)
+  }
 
-  sql += ' ORDER BY e.date ASC LIMIT ? OFFSET ?'
-  params.push(limit, offset)
+  sql += ' GROUP BY e.id ORDER BY e.start_datetime ASC'
 
-  const [rows] = await query<EventRow[]>(sql, params)
-  const [[{ total }]] = await query<RowDataPacket[]>('SELECT COUNT(*) as total FROM events WHERE 1=1')
-  sendSuccess(res, { data: rows, total, page, limit, totalPages: Math.ceil((total as number) / limit) })
+  const [rows] = await query<RowDataPacket[]>(sql, params)
+  const favoriteIds = req.user ? await getFavoriteEventIds(req.user.id) : new Set<number>()
+  sendSuccess(res, mapEventsWithFavorites(rows, favoriteIds))
 }
 
-export async function getEventById(req: Request, res: Response): Promise<void> {
-  const [rows] = await query<EventRow[]>(EVENT_SELECT + ' WHERE e.id = ?', [req.params['id']])
+export async function getEventById(req: AuthRequest, res: Response): Promise<void> {
+  const [rows] = await query<RowDataPacket[]>(
+    `${EVENT_BASE} WHERE e.id = ? GROUP BY e.id LIMIT 1`,
+    [req.params['id']]
+  )
   if (!rows[0]) { sendNotFound(res, 'Event not found'); return }
-  sendSuccess(res, rows[0])
+  const favoriteIds = req.user ? await getFavoriteEventIds(req.user.id) : new Set<number>()
+  sendSuccess(res, mapEventForFrontend(rows[0], favoriteIds.has(Number(rows[0].id))))
+}
+
+export async function getFavoriteEvents(req: AuthRequest, res: Response): Promise<void> {
+  const [rows] = await query<RowDataPacket[]>(
+    `${EVENT_BASE}
+     INNER JOIN favorites f ON f.event_id = e.id AND f.user_id = ?
+     WHERE e.event_status = 'active'
+     GROUP BY e.id
+     ORDER BY MAX(f.created_at) DESC`,
+    [req.user!.id]
+  )
+  sendSuccess(res, rows.map((row) => mapEventForFrontend(row, true)))
+}
+
+export async function toggleFavorite(req: AuthRequest, res: Response): Promise<void> {
+  const eventId = Number(req.params['id'])
+  if (!eventId) {
+    sendBadRequest(res, 'Invalid event id')
+    return
+  }
+
+  const event = await queryOne<RowDataPacket>('SELECT id FROM events WHERE id = ?', [eventId])
+  if (!event) {
+    sendNotFound(res, 'Event not found')
+    return
+  }
+
+  const existing = await queryOne<RowDataPacket>(
+    'SELECT event_id FROM favorites WHERE user_id = ? AND event_id = ?',
+    [req.user!.id, eventId]
+  )
+
+  if (existing) {
+    await execute('DELETE FROM favorites WHERE user_id = ? AND event_id = ?', [
+      req.user!.id,
+      eventId,
+    ])
+  } else {
+    await execute('INSERT INTO favorites (user_id, event_id) VALUES (?, ?)', [
+      req.user!.id,
+      eventId,
+    ])
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `${EVENT_BASE} WHERE e.id = ? GROUP BY e.id LIMIT 1`,
+    [eventId]
+  )
+  if (!rows[0]) {
+    sendNotFound(res, 'Event not found')
+    return
+  }
+
+  sendSuccess(
+    res,
+    mapEventForFrontend(rows[0], !existing),
+    existing ? 'Removed from favorites' : 'Added to favorites'
+  )
 }
 
 export async function createEvent(req: AuthRequest, res: Response): Promise<void> {
-  const { title, description, date, end_date, location, capacity, price, category_id, status } =
-    req.body as {
-      title: string; description: string; date: string; end_date?: string
-      location: string; capacity: number; price: number; category_id: number
-      status?: 'draft' | 'published'
-    }
+  if (req.user!.role !== 'admin') {
+    sendForbidden(res, 'Admin access required')
+    return
+  }
+
+  const body = req.body as {
+    title: string
+    description: string
+    date: string
+    time?: string
+    location: string
+    capacity: number
+    category_id?: number | string
+  }
+
+  const categoryId = Number(body.category_id)
+  if (!categoryId || Number.isNaN(categoryId)) {
+    sendBadRequest(res, 'A valid category_id is required')
+    return
+  }
+
+  const category = await queryOne<RowDataPacket>(
+    'SELECT id FROM categories WHERE id = ?',
+    [categoryId]
+  )
+  if (!category) {
+    sendBadRequest(res, 'Category not found. Run database seed or refresh categories.')
+    return
+  }
+
+  const { title, description, date, time, location, capacity } = body
+  const startDatetime = `${date} ${time ?? '09:00'}:00`
+  const adminRow = await queryOne<RowDataPacket>(
+    'SELECT user_id FROM administrators WHERE user_id = ?',
+    [req.user!.id]
+  )
+  const organizerId = adminRow ? req.user!.id : null
 
   const [result] = await execute(
-    `INSERT INTO events (title, description, date, end_date, location, capacity, price, category_id, organizer_id, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [title, description, date, end_date ?? null, location, capacity, price, category_id, req.user!.id, status ?? 'draft']
+    `INSERT INTO events (title, description, venue, start_datetime, capacity, event_status, organizer_admin_user_id)
+     VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+    [title, description ?? '', location, startDatetime, capacity, organizerId]
   )
-  const event = await queryOne<EventRow>(EVENT_SELECT + ' WHERE e.id = ?', [result.insertId])
-  sendCreated(res, event, 'Event created')
+
+  await execute(
+    'INSERT INTO event_categories (event_id, category_id) VALUES (?, ?)',
+    [result.insertId, categoryId]
+  )
+
+  const [rows] = await query<RowDataPacket[]>(
+    `${EVENT_BASE} WHERE e.id = ? GROUP BY e.id`,
+    [result.insertId]
+  )
+  sendCreated(res, mapEventForFrontend(rows[0]!), 'Event created')
 }
 
 export async function updateEvent(req: AuthRequest, res: Response): Promise<void> {
-  const event = await queryOne<EventRow>('SELECT id, organizer_id FROM events WHERE id = ?', [req.params['id']])
-  if (!event) { sendNotFound(res, 'Event not found'); return }
-  if (req.user!.role !== 'admin' && event.organizer_id !== req.user!.id) {
-    sendForbidden(res, 'Not authorized to edit this event'); return
+  if (req.user!.role !== 'admin') {
+    sendForbidden(res, 'Admin access required')
+    return
   }
 
-  const { title, description, date, end_date, location, capacity, price, category_id, status } =
-    req.body as Partial<{
-      title: string; description: string; date: string; end_date: string
-      location: string; capacity: number; price: number; category_id: number
-      status: 'draft' | 'published' | 'cancelled' | 'completed'
-    }>
+  const eventId = req.params['id']
+  const exists = await queryOne<RowDataPacket>('SELECT id FROM events WHERE id = ?', [eventId])
+  if (!exists) { sendNotFound(res, 'Event not found'); return }
+
+  const { title, description, location, capacity, status } = req.body as Partial<{
+    title: string
+    description: string
+    location: string
+    capacity: number
+    status: string
+  }>
 
   await execute(
     `UPDATE events SET
-      title = COALESCE(?, title), description = COALESCE(?, description),
-      date = COALESCE(?, date), end_date = COALESCE(?, end_date),
-      location = COALESCE(?, location), capacity = COALESCE(?, capacity),
-      price = COALESCE(?, price), category_id = COALESCE(?, category_id),
-      status = COALESCE(?, status), updated_at = NOW()
+      title = COALESCE(?, title),
+      description = COALESCE(?, description),
+      venue = COALESCE(?, venue),
+      capacity = COALESCE(?, capacity),
+      event_status = COALESCE(?, event_status)
      WHERE id = ?`,
-    [title ?? null, description ?? null, date ?? null, end_date ?? null,
-     location ?? null, capacity ?? null, price ?? null, category_id ?? null,
-     status ?? null, event.id]
+    [title ?? null, description ?? null, location ?? null, capacity ?? null, status ?? null, eventId]
   )
 
-  const updated = await queryOne<EventRow>(EVENT_SELECT + ' WHERE e.id = ?', [event.id])
-  sendSuccess(res, updated, 'Event updated')
+  const [rows] = await query<RowDataPacket[]>(`${EVENT_BASE} WHERE e.id = ? GROUP BY e.id`, [eventId])
+  sendSuccess(res, mapEventForFrontend(rows[0]!), 'Event updated')
 }
 
 export async function deleteEvent(req: AuthRequest, res: Response): Promise<void> {
-  const event = await queryOne<EventRow>('SELECT id, organizer_id FROM events WHERE id = ?', [req.params['id']])
-  if (!event) { sendNotFound(res, 'Event not found'); return }
-  if (req.user!.role !== 'admin' && event.organizer_id !== req.user!.id) {
-    sendForbidden(res, 'Not authorized to delete this event'); return
+  if (req.user!.role !== 'admin') {
+    sendForbidden(res, 'Admin access required')
+    return
   }
-  await execute('DELETE FROM events WHERE id = ?', [event.id])
+
+  const [result] = await execute('DELETE FROM events WHERE id = ?', [req.params['id']])
+  if (result.affectedRows === 0) { sendNotFound(res, 'Event not found'); return }
   sendSuccess(res, null, 'Event deleted')
 }
 
 export async function getEventComments(req: Request, res: Response): Promise<void> {
   const [rows] = await query<RowDataPacket[]>(
-    `SELECT c.id, c.content, c.created_at, u.name AS user_name, u.id AS user_id
+    `SELECT c.id, c.content, c.created_at, u.full_name AS user_name, u.id AS user_id
      FROM comments c JOIN users u ON c.user_id = u.id
      WHERE c.event_id = ? ORDER BY c.created_at DESC`,
     [req.params['id']]
@@ -127,7 +240,7 @@ export async function getEventComments(req: Request, res: Response): Promise<voi
 
 export async function getEventRatings(req: Request, res: Response): Promise<void> {
   const [rows] = await query<RowDataPacket[]>(
-    `SELECT r.id, r.score, r.review, r.created_at, u.name AS user_name
+    `SELECT r.id, r.score, r.created_at, u.full_name AS user_name
      FROM ratings r JOIN users u ON r.user_id = u.id
      WHERE r.event_id = ? ORDER BY r.created_at DESC`,
     [req.params['id']]

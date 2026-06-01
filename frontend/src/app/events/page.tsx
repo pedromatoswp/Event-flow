@@ -154,7 +154,7 @@ export default function EventsPage() {
                   <Card className="overflow-hidden hover:shadow-lg transition-shadow">
                     <div className="relative h-48 bg-gradient-to-br from-primary/20 to-secondary/20">
                       <img
-                        src={event.imageUrl || '/placeholder-event.jpg'}
+                        src={event.imageUrl || '/placeholder-event.svg'}
                         alt={event.title}
                         className="w-full h-full object-cover"
                       />

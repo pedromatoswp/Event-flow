@@ -94,7 +94,7 @@ export default function EventDetailsPage() {
       {/* Header */}
       <section className="relative h-64 md:h-96">
         <img
-          src={event.imageUrl || '/placeholder-event.jpg'}
+          src={event.imageUrl || '/placeholder-event.svg'}
           alt={event.title}
           className="w-full h-full object-cover"
         />

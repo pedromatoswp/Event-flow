@@ -16,6 +16,15 @@ npm run dev
 
 Server runs on `http://localhost:3001`
 
+### Demo accounts (after running `database/00_schema.sql` + `01_seed.sql`)
+
+| Role  | Email                     | Password   |
+|-------|---------------------------|------------|
+| User  | client1@eventflow.local   | client123  |
+| Admin | admin@eventflow.local     | admin123   |
+
+You can also register any new account via `POST /api/v1/auth/register` (password min. 6 characters).
+
 ---
 
 ## Environment Variables

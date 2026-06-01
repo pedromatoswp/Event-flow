@@ -1,26 +1,33 @@
 import type { Request, Response } from 'express'
 import type { RowDataPacket } from 'mysql2'
 import { query, execute } from '../utils/db'
-import { sendSuccess } from '../utils/response'
+import { sendSuccess, sendNotFound } from '../utils/response'
 
 export async function getDashboardStats(_req: Request, res: Response): Promise<void> {
   const [[users]] = await query<RowDataPacket[]>('SELECT COUNT(*) as total FROM users')
   const [[events]] = await query<RowDataPacket[]>('SELECT COUNT(*) as total FROM events')
-  const [[tickets]] = await query<RowDataPacket[]>('SELECT COUNT(*) as total, COALESCE(SUM(total_price), 0) as revenue FROM tickets WHERE status = "confirmed"')
+  const [[tickets]] = await query<RowDataPacket[]>(
+    `SELECT COUNT(*) as total, 0 as revenue FROM tickets WHERE status = 'approved'`
+  )
   const [[comments]] = await query<RowDataPacket[]>('SELECT COUNT(*) as total FROM comments')
   const [[ratings]] = await query<RowDataPacket[]>('SELECT COUNT(*) as total, COALESCE(AVG(score), 0) as avg_score FROM ratings')
 
   const [recentEvents] = await query<RowDataPacket[]>(
-    `SELECT e.id, e.title, e.date, e.status, u.name AS organizer,
+    `SELECT e.id, e.title, e.start_datetime AS date, e.event_status AS status,
+            u.full_name AS organizer,
             COUNT(t.id) AS tickets_sold
      FROM events e
-     LEFT JOIN users u ON e.organizer_id = u.id
-     LEFT JOIN tickets t ON t.event_id = e.id AND t.status = 'confirmed'
-     GROUP BY e.id ORDER BY e.created_at DESC LIMIT 5`
+     LEFT JOIN users u ON u.id = e.organizer_admin_user_id
+     LEFT JOIN tickets t ON t.event_id = e.id AND t.status IN ('approved', 'pending')
+     GROUP BY e.id, e.title, e.start_datetime, e.event_status, u.full_name, e.created_at
+     ORDER BY e.created_at DESC LIMIT 5`
   )
 
   const [recentUsers] = await query<RowDataPacket[]>(
-    'SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC LIMIT 5'
+    `SELECT id, full_name AS name, email,
+            CASE WHEN role_id = 2 THEN 'admin' ELSE 'user' END AS role,
+            created_at
+     FROM users ORDER BY created_at DESC LIMIT 5`
   )
 
   sendSuccess(res, {
@@ -61,19 +68,20 @@ export async function getEventStats(_req: Request, res: Response): Promise<void>
 }
 
 export async function banUser(req: Request, res: Response): Promise<void> {
-  const { reason } = req.body as { reason?: string }
-  await execute(
-    "UPDATE users SET role = 'banned', ban_reason = ?, banned_at = NOW() WHERE id = ?",
-    [reason ?? null, req.params['id']]
-  )
+  const [result] = await execute('UPDATE users SET is_active = FALSE WHERE id = ?', [req.params['id']])
+  if (result.affectedRows === 0) {
+    sendNotFound(res, 'User not found')
+    return
+  }
   sendSuccess(res, null, 'User banned')
 }
 
 export async function unbanUser(req: Request, res: Response): Promise<void> {
-  await execute(
-    "UPDATE users SET role = 'user', ban_reason = NULL, banned_at = NULL WHERE id = ?",
-    [req.params['id']]
-  )
+  const [result] = await execute('UPDATE users SET is_active = TRUE WHERE id = ?', [req.params['id']])
+  if (result.affectedRows === 0) {
+    sendNotFound(res, 'User not found')
+    return
+  }
   sendSuccess(res, null, 'User unbanned')
 }
 

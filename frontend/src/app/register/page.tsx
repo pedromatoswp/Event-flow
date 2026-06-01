@@ -41,8 +41,8 @@ export default function RegisterPage() {
 
     try {
       await register({
-        name: formData.name,
-        email: formData.email,
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
       });
       success('Registration successful!');
@@ -172,6 +172,10 @@ export default function RegisterPage() {
                 Sign in
               </Link>
             </div>
+
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              Qualquer e-mail válido funciona. A senha precisa ter no mínimo 6 caracteres.
+            </p>
           </CardContent>
         </Card>
       </motion.div>

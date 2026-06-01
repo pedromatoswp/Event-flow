@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Calendar, Ticket, Heart, TrendingUp, Clock, ArrowRight } from 'lucide-react';
+import { Calendar, Ticket, Heart, TrendingUp, Clock, ArrowRight, Plus, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { eventsApi, ticketsApi } from '@/lib/api';
@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/useToast';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, isAuthenticated, isAdmin, isLoading: authLoading } = useAuth();
   const { error } = useToast();
   const [recentEvents, setRecentEvents] = useState<Event[]>([]);
   const [myTickets, setMyTickets] = useState<TicketType[]>([]);
@@ -68,6 +68,22 @@ export default function DashboardPage() {
             <p className="text-xl text-muted-foreground">
               Here's what's happening with your events
             </p>
+            {isAdmin && (
+              <div className="flex flex-wrap gap-3 mt-6">
+                <Link href="/admin/events">
+                  <Button size="lg">
+                    <Plus className="h-5 w-5 mr-2" />
+                    Criar novo evento
+                  </Button>
+                </Link>
+                <Link href="/admin">
+                  <Button size="lg" variant="outline">
+                    <Shield className="h-5 w-5 mr-2" />
+                    Painel administrativo
+                  </Button>
+                </Link>
+              </div>
+            )}
           </motion.div>
         </div>
       </section>
@@ -169,7 +185,7 @@ export default function DashboardPage() {
                       <Link key={event.id} href={`/events/${event.id}`}>
                         <div className="flex gap-4 p-4 rounded-lg hover:bg-accent transition-colors">
                           <img
-                            src={event.imageUrl || '/placeholder-event.jpg'}
+                            src={event.imageUrl || '/placeholder-event.svg'}
                             alt={event.title}
                             className="w-20 h-20 rounded-lg object-cover"
                           />
@@ -276,7 +292,7 @@ export default function DashboardPage() {
                       <Card className="hover:shadow-lg transition-shadow">
                         <div className="relative h-32">
                           <img
-                            src={event.imageUrl || '/placeholder-event.jpg'}
+                            src={event.imageUrl || '/placeholder-event.svg'}
                             alt={event.title}
                             className="w-full h-full object-cover rounded-t-lg"
                           />

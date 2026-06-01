@@ -103,7 +103,7 @@ export default function TicketsPage() {
                 <Card className="overflow-hidden hover:shadow-lg transition-shadow">
                   <div className="relative h-32 bg-gradient-to-br from-primary/20 to-secondary/20">
                     <img
-                      src={ticket.event?.imageUrl || '/placeholder-event.jpg'}
+                      src={ticket.event?.imageUrl || '/placeholder-event.svg'}
                       alt={ticket.event?.title}
                       className="w-full h-full object-cover"
                     />
